@@ -133,12 +133,14 @@ checkstock/
 │   └── templates/
 │       └── index.html     # Дашборд (Jinja2, HTMX, Tailwind CSS)
 ├── tests/
-│   └── test_warehouse.py  # 9 интеграционных тестов бизнес-логики
-├── .gitignore             # Исключение временных и сгенерированных файлов
-├── Dockerfile             # Сборка контейнера приложения
-├── docker-compose.yml     # Запуск базы PostgreSQL 16 и веб-сервиса
-├── requirements.txt       # Зависимости Python
-├── pytest.ini             # Конфигурация тестов
-├── AUDIT_REPORT.md        # Сводный отчёт по проекту
-└── README.md              # Документация
+│   ├── test_warehouse.py      # 10 интеграционных тестов бизнес-логики (Pytest)
+│   └── test_e2e_playwright.js # Сквозные тесты пользовательского интерфейса (Playwright)
+├── .gitignore                 # Исключение временных и сгенерированных файлов
+├── Dockerfile                 # Сборка контейнера приложения
+├── docker-compose.yml         # Запуск базы PostgreSQL 16 и веб-сервиса
+├── requirements.txt           # Зависимости Python
+├── pytest.ini                 # Конфигурация тестов
+├── AUDIT_REPORT.md            # Сводный отчёт по проекту
+├── VIDEO_SPEECH_GUIDE.md      # Пошаговый сценарий и речь для видео-демонстрации
+└── README.md                  # Документация
 ```
