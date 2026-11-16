@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CheckStock — Где сейчас товар?</title>
+  <!-- Стили Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Библиотека HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.11"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .badge { display: inline-flex; align-items: center; padding: 0.15rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans min-h-screen">
+
+  <!-- ========================================== -->
+  <!-- 1. ШАПКА И СВОДНЫЕ КАРТОЧКИ KPI -->
+  <!-- ========================================== -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-md shadow-indigo-200">
+          CS
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-xl font-bold tracking-tight text-slate-900">CheckStock</h1>
+            <span class="text-xs bg-indigo-100 text-indigo-700 font-semibold px-2 py-0.5 rounded-full">v1.0 Pro</span>
+          </div>
+          <p class="text-xs text-slate-500">Где сейчас товар? • <span class="font-medium text-slate-700">Основной магазин WB</span></p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-3">
+        <form action="/reset-benchmark" method="POST" onsubmit="return confirm('Сбросить базу данных к начальным эталонным данным (Север 10/5/0, Юг 6/0/4)? Все текущие операции будут перезапущены.');">
+          <button type="submit" class="inline-flex items-center px-3.5 py-2 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:border-rose-300 transition shadow-sm">
+            <svg class="w-4 h-4 mr-1.5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Сбросить БД к эталону
+          </button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Карточки показателей KPI -->
+    <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow transition">
+        <div class="text-xs font-medium text-slate-500">Всего на ФФ (физ.)</div>
+        <div class="mt-1 text-2xl font-extrabold text-slate-800">{{ kpis.total_physical }} <span class="text-xs font-normal text-slate-400">шт.</span></div>
+        <div class="mt-1 text-[11px] text-slate-400">На всех полках ФФ</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-sm hover:shadow transition">
+        <div class="text-xs font-semibold text-emerald-800">Всего доступно</div>
+        <div class="mt-1 text-2xl font-extrabold text-emerald-600">{{ kpis.total_available }} <span class="text-xs font-normal text-emerald-500">шт.</span></div>
+        <div class="mt-1 text-[11px] text-emerald-600">Свободно к отгрузке</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-sm hover:shadow transition">
+        <div class="text-xs font-semibold text-amber-800">В резерве FBS</div>
+        <div class="mt-1 text-2xl font-extrabold text-amber-600">{{ kpis.total_reserved_fbs }} <span class="text-xs font-normal text-amber-500">шт.</span></div>
+        <div class="mt-1 text-[11px] text-amber-600">Под клиентские заказы</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/20 shadow-sm hover:shadow transition">
+        <div class="text-xs font-semibold text-blue-800">В пути между ФФ</div>
+        <div class="mt-1 text-2xl font-extrabold text-blue-600">{{ kpis.in_transit_ff }} <span class="text-xs font-normal text-blue-500">шт.</span></div>
+        <div class="mt-1 text-[11px] text-blue-600">Перемещения</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-indigo-200 bg-indigo-50/20 shadow-sm hover:shadow transition">
+        <div class="text-xs font-semibold text-indigo-800">В пути на FBO</div>
+        <div class="mt-1 text-2xl font-extrabold text-indigo-600">{{ kpis.in_transit_fbo }} <span class="text-xs font-normal text-indigo-500">шт.</span></div>
+        <div class="mt-1 text-[11px] text-indigo-600">Едет на склад МП</div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-purple-200 bg-purple-50/20 shadow-sm hover:shadow transition">
+        <div class="text-xs font-semibold text-purple-800">В пути к клиенту FBS</div>
+        <div class="mt-1 text-2xl font-extrabold text-purple-600">{{ kpis.in_transit_fbs }} <span class="text-xs font-normal text-purple-500">шт.</span></div>
+        <div class="mt-1 text-[11px] text-purple-600">Доставка покупателю</div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- 2. БАННЕРЫ ОШИБОК И РАЗРЕШЕНИЯ ДЕФИЦИТА -->
+    <!-- ========================================== -->
+    {% if msg %}
+      {% if alert_type == 'deficit' and deficit %}
+        <!-- Сценарий А: Интерактивный блок нехватки с кнопками в 1 клик -->
+        <div class="bg-amber-50 border-2 border-amber-400 rounded-xl p-5 shadow-md">
+          <div class="flex items-start">
+            <div class="flex-shrink-0">
+              <svg class="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div class="ml-3.5 flex-1">
+              <h3 class="text-sm font-bold text-amber-900 uppercase tracking-wide">
+                Частичная нехватка на выбранном ФФ — решение в 1 клик
+              </h3>
+              <p class="mt-1 text-sm text-amber-800 font-medium">
+                {{ msg }}
+              </p>
+
+              <div class="mt-4 flex flex-wrap gap-3">
+                <!-- Кнопка 1: Перемещение недостающего с донора -->
+                {% if deficit.donor_id and deficit.amount %}
+                  <form action="/web/transfer" method="POST">
+                    <input type="hidden" name="source_warehouse_id" value="{{ deficit.donor_id }}">
+                    <input type="hidden" name="target_warehouse_id" value="{{ deficit.source_id }}">
+                    <input type="hidden" name="sku" value="{{ deficit.sku }}">
+                    <input type="hidden" name="qty" value="{{ deficit.amount }}">
+                    <button type="submit" class="inline-flex items-center px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow transition">
+                      <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                      </svg>
+                      Оформить перемещение недостающих {{ deficit.amount }} шт. со склада «{{ deficit.donor_name }}» на склад «{{ deficit.source_name }}»
+                    </button>
+                  </form>
+                {% endif %}
+
+                <!-- Кнопка 2: Провести только на доступные шт. -->
+                {% if deficit.available_source and deficit.available_source > 0 %}
+                  {% if deficit.op_type == 'FBS' %}
+                    <form action="/web/fbs" method="POST">
+                      <input type="hidden" name="warehouse_id" value="{{ deficit.source_id }}">
+                      <input type="hidden" name="sku" value="{{ deficit.sku }}">
+                      <input type="hidden" name="qty" value="{{ deficit.available_source }}">
+                      <input type="hidden" name="order_number" value="{{ deficit.destination or '1001' }}">
+                      <button type="submit" class="inline-flex items-center px-4 py-2 text-xs font-semibold text-amber-900 bg-amber-200 hover:bg-amber-300 rounded-lg shadow-sm transition">
+                        Провести резерв FBS только на доступные {{ deficit.available_source }} шт. со склада «{{ deficit.source_name }}»
+                      </button>
+                    </form>
+                  {% elif deficit.op_type == 'FBO' %}
+                    <form action="/web/fbo" method="POST">
+                      <input type="hidden" name="warehouse_id" value="{{ deficit.source_id }}">
+                      <input type="hidden" name="sku" value="{{ deficit.sku }}">
+                      <input type="hidden" name="qty" value="{{ deficit.available_source }}">
+                      <input type="hidden" name="destination" value="{{ deficit.destination or 'Склад WB Коледино' }}">
+                      <button type="submit" class="inline-flex items-center px-4 py-2 text-xs font-semibold text-amber-900 bg-amber-200 hover:bg-amber-300 rounded-lg shadow-sm transition">
+                        Провести поставку FBO только на доступные {{ deficit.available_source }} шт. со склада «{{ deficit.source_name }}»
+                      </button>
+                    </form>
+                  {% endif %}
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% elif alert_type == 'warning' %}
+        <!-- Желтое предупреждение (Идемпотентность или архив) -->
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-xl shadow-sm">
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <svg class="h-5 w-5 text-yellow-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="ml-3">
+              <p class="text-sm font-semibold text-yellow-800">{{ msg }}</p>
+            </div>
+          </div>
+        </div>
+      {% elif alert_type == 'error' %}
+        <!-- Красная ошибка / Глобальная нехватка -->
+        <div class="bg-rose-50 border-l-4 border-rose-500 p-4 rounded-r-xl shadow-sm">
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <svg class="h-5 w-5 text-rose-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="ml-3">
+              <p class="text-sm font-semibold text-rose-800">{{ msg }}</p>
+            </div>
+          </div>
+        </div>
+      {% else %}
+        <!-- Зеленый успех -->
+        <div class="bg-emerald-50 border-l-4 border-emerald-500 p-4 rounded-r-xl shadow-sm">
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <svg class="h-5 w-5 text-emerald-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+              </svg>
+            </div>
+            <div class="ml-3">
+              <p class="text-sm font-semibold text-emerald-800">{{ msg }}</p>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    {% endif %}
+
+    <!-- БАННЕР ТОВАРА НА УДАЛЕННЫХ СКЛАДАХ (Сценарий Б) -->
+    {% if archived_warnings %}
+      <div class="bg-amber-500/10 border-2 border-amber-500 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between flex-wrap gap-3">
+          <div class="flex items-center space-x-3">
+            <span class="p-2 bg-amber-500 text-white rounded-lg font-bold text-xs uppercase">Внимание</span>
+            <div>
+              <h4 class="text-sm font-bold text-amber-900">Товар числится на удалённом / архивном ФФ!</h4>
+              <p class="text-xs text-amber-800">
+                Склад выведен из эксплуатации, но остатки полностью сохранены в базе:
+                {% for w in archived_warnings %}
+                  <span class="font-bold underline decoration-amber-500">{{ w.warehouse_name }}</span>: {{ w.sku }} — {{ w.physical_qty }} шт. (доступно {{ w.available_qty }} шт.){% if not loop.last %}, {% endif %}
+                {% endfor %}
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center flex-wrap gap-2">
+            {% if active_warehouses|length > 0 %}
+              {% set target_wh = active_warehouses[0] %}
+              {% for w in archived_warnings %}
+                {% if w.available_qty > 0 %}
+                  <form action="/web/transfer" method="POST" class="inline">
+                    <input type="hidden" name="source_warehouse_id" value="{{ w.warehouse_id }}">
+                    <input type="hidden" name="target_warehouse_id" value="{{ target_wh.id }}">
+                    <input type="hidden" name="sku" value="{{ w.sku }}">
+                    <input type="hidden" name="qty" value="{{ w.available_qty }}">
+                    <button type="submit" class="inline-flex items-center px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow transition">
+                      <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                      </svg>
+                      Вывезти {{ w.available_qty }} шт. ({{ w.sku }}) на «{{ target_wh.name }}» в 1 клик
+                    </button>
+                  </form>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+            <a href="#section-transfer" class="inline-flex items-center px-2.5 py-1.5 bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 text-xs font-semibold rounded-lg shadow-sm transition">
+              Настроить вручную &darr;
+            </a>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- ========================================== -->
+    <!-- 3. ГЛАВНЫЙ ЭКРАН 01: МАТРИЦА «ГДЕ СЕЙЧАС ТОВАР?» -->
+    <!-- ========================================== -->
+    <div class="space-y-6">
+      
+      <!-- ТАБЛИЦА 1: Детализация по каждому SKU и каждому ФФ -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+              <span>01. Остатки по складам ФФ (Полка)</span>
+              <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">Физический и Доступный сток</span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">Формула: <code class="bg-slate-100 px-1 py-0.5 rounded text-indigo-700 font-mono">Доступно = Физически - В резерве FBS</code></p>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-left text-xs">
+            <thead class="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
+              <tr>
+                <th class="px-6 py-3">Артикул</th>
+                <th class="px-6 py-3">Название товара</th>
+                <th class="px-6 py-3">Склад ФФ</th>
+                <th class="px-6 py-3 text-right">Физически на полке</th>
+                <th class="px-6 py-3 text-right">В резерве FBS</th>
+                <th class="px-6 py-3 text-right text-emerald-700">Доступно к отгрузке</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 font-medium">
+              {% for row in detailed_rows %}
+              <tr class="hover:bg-slate-50/80 transition {% if not row.warehouse_is_active %}bg-rose-50/30{% endif %}">
+                <td class="px-6 py-3 whitespace-nowrap">
+                  <span class="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{{ row.sku }}</span>
+                </td>
+                <td class="px-6 py-3 whitespace-nowrap text-slate-700 font-medium">{{ row.product_name }}</td>
+                <td class="px-6 py-3 whitespace-nowrap">
+                  <div class="flex items-center space-x-2">
+                    <span class="font-semibold text-slate-900">{{ row.warehouse_name }}</span>
+                    {% if row.warehouse_is_active %}
+                      <span class="badge bg-emerald-100 text-emerald-800 text-[10px]">АКТИВЕН</span>
+                    {% else %}
+                      <span class="badge bg-rose-100 text-rose-800 text-[10px] font-bold border border-rose-300">УДАЛЁН / АРХИВ</span>
+                    {% endif %}
+                  </div>
+                </td>
+                <td class="px-6 py-3 whitespace-nowrap text-right font-bold text-slate-800">{{ row.physical_qty }} шт.</td>
+                <td class="px-6 py-3 whitespace-nowrap text-right text-amber-600 font-bold">
+                  {% if row.reserved_fbs_qty > 0 %}
+                    {{ row.reserved_fbs_qty }} шт.
+                  {% else %}
+                    <span class="text-slate-300">0</span>
+                  {% endif %}
+                </td>
+                <td class="px-6 py-3 whitespace-nowrap text-right font-black text-sm {% if row.available_qty > 0 %}text-emerald-600{% else %}text-slate-400{% endif %}">
+                  {{ row.available_qty }} шт.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ТАБЛИЦА 2: Сводка по артикулам с товарами в пути и на МП -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100">
+          <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+            <span>02. Сводная матрица «Где сейчас товар?» (Товары на ФФ + В пути + На МП)</span>
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">Полный баланс по контуру компании: товар на складах, товар в пути и товар, принятый маркетплейсом</p>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-left text-xs">
+            <thead class="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
+              <tr>
+                <th class="px-4 py-3">Артикул</th>
+                <th class="px-4 py-3">Товар</th>
+                <th class="px-4 py-3 text-right">Физ. на ФФ</th>
+                <th class="px-4 py-3 text-right">В резерве FBS</th>
+                <th class="px-4 py-3 text-right">Доступно</th>
+                <th class="px-4 py-3 text-right text-blue-700 bg-blue-50/40">В пути между ФФ</th>
+                <th class="px-4 py-3 text-right text-indigo-700 bg-indigo-50/40">В пути на МП (FBO)</th>
+                <th class="px-4 py-3 text-right text-purple-700 bg-purple-50/40">В пути клиенту (FBS)</th>
+                <th class="px-4 py-3 text-right text-emerald-700 bg-emerald-50/40">Принято на МП (FBO)</th>
+                <th class="px-4 py-3 text-right font-black text-slate-900 bg-slate-100/70">ИТОГО в компании</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 font-medium">
+              {% for s in summary_rows %}
+              <tr class="hover:bg-slate-50 transition">
+                <td class="px-4 py-3 whitespace-nowrap font-mono font-bold text-slate-900">{{ s.sku }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-slate-700">{{ s.product_name }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-right font-bold text-slate-800">{{ s.sum_physical }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-right text-amber-600 font-semibold">{{ s.sum_reserved }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-right text-emerald-600 font-bold">{{ s.sum_available }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-right font-bold text-blue-700 bg-blue-50/20">
+                  {% if s.in_transit_ff > 0 %}<span class="badge bg-blue-100 text-blue-800">{{ s.in_transit_ff }}</span>{% else %}<span class="text-slate-300">0</span>{% endif %}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-right font-bold text-indigo-700 bg-indigo-50/20">
+                  {% if s.in_transit_fbo > 0 %}<span class="badge bg-indigo-100 text-indigo-800">{{ s.in_transit_fbo }}</span>{% else %}<span class="text-slate-300">0</span>{% endif %}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-right font-bold text-purple-700 bg-purple-50/20">
+                  {% if s.in_transit_fbs > 0 %}<span class="badge bg-purple-100 text-purple-800">{{ s.in_transit_fbs }}</span>{% else %}<span class="text-slate-300">0</span>{% endif %}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-right font-bold text-emerald-700 bg-emerald-50/20">
+                  {% if s.accepted_fbo > 0 %}<span class="badge bg-emerald-100 text-emerald-800">{{ s.accepted_fbo }}</span>{% else %}<span class="text-slate-300">0</span>{% endif %}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-right font-black text-sm text-slate-900 bg-slate-100/50">
+                  {{ s.total_company }} шт.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 4. ЭКРАН 02: ПАНЕЛЬ ОПЕРАЦИЙ И УПРАВЛЕНИЯ -->
+    <!-- ========================================== -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- БЛОК УПРАВЛЕНИЯ СКЛАДАМИ -->
+      <div class="lg:col-span-4 space-y-4">
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <h3 class="text-sm font-bold text-slate-900 mb-3 flex items-center justify-between">
+            <span>Склады фулфилмента (ФФ)</span>
+            <span class="text-[11px] font-normal text-slate-400">Soft Delete защита</span>
+          </h3>
+
+          <!-- Список складов с переименованием и удалением -->
+          <div class="space-y-2 mb-4">
+            {% for wh in all_warehouses %}
+            <div class="p-3 rounded-xl border {% if wh.is_active %}border-slate-200 bg-slate-50/50{% else %}border-rose-200 bg-rose-50/40{% endif %} flex flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                  <span class="text-xs font-bold text-slate-800">{{ wh.name }}</span>
+                  {% if wh.is_active %}
+                    <span class="badge bg-emerald-100 text-emerald-800 text-[9px]">АКТИВЕН</span>
+                  {% else %}
+                    <span class="badge bg-rose-100 text-rose-800 text-[9px] font-bold">АРХИВ</span>
+                  {% endif %}
+                </div>
+
+                {% if wh.is_active %}
+                  <form action="/web/warehouses/{{ wh.id }}/delete" method="POST" onsubmit="return confirm('Перевести склад «{{ wh.name }}» в архив? Физическое удаление запрещено — все остатки и история останутся в сохранности!');">
+                    <button type="submit" class="text-[11px] text-rose-600 hover:text-rose-800 font-semibold px-2 py-0.5 hover:bg-rose-100 rounded transition">
+                      Удалить
+                    </button>
+                  </form>
+                {% else %}
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[10px] text-rose-500 font-medium">В архиве</span>
+                    <form action="/web/warehouses/{{ wh.id }}/restore" method="POST">
+                      <button type="submit" class="text-[11px] text-emerald-600 hover:text-emerald-800 font-semibold px-2 py-0.5 hover:bg-emerald-50 border border-emerald-200 rounded transition flex items-center gap-1">
+                        <svg class="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Восстановить
+                      </button>
+                    </form>
+                  </div>
+                {% endif %}
+              </div>
+
+              <!-- Переименование -->
+              <form action="/web/warehouses/{{ wh.id }}/rename" method="POST" class="flex items-center gap-1.5 mt-1">
+                <input type="text" name="name" value="{{ wh.name }}" class="w-full text-xs px-2 py-1 border border-slate-200 rounded-md focus:ring-1 focus:ring-indigo-500 bg-white" required>
+                <button type="submit" title="Сохранить новое название" class="text-[11px] px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 font-semibold text-indigo-700 rounded-md transition whitespace-nowrap border border-indigo-200 flex items-center gap-1">
+                  <svg class="w-3 h-3 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  Переименовать
+                </button>
+              </form>
+            </div>
+            {% endfor %}
+          </div>
+
+          <!-- Форма создания нового склада -->
+          <form action="/web/warehouses" method="POST" class="pt-3 border-t border-slate-100">
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Новый склад ФФ:</label>
+            <div class="flex gap-2">
+              <input type="text" name="name" placeholder="Например: Восток" class="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500" required>
+              <button type="submit" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition whitespace-nowrap">
+                + Добавить
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ФОРМЫ ОПЕРАЦИЙ -->
+      <div class="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        <!-- ФОРМА: ПРИХОД (INBOUND) -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+              Приход товара (INBOUND)
+            </h3>
+            <span class="text-[10px] text-slate-400 font-mono">+ физически</span>
+          </div>
+          <form action="/web/inbound" method="POST" class="space-y-3">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-600 mb-1">Активный склад ФФ:</label>
+              <select name="warehouse_id" class="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg bg-white" required>
+                {% for wh in active_warehouses %}
+                  <option value="{{ wh.id }}">{{ wh.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div class="col-span-2">
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Товар:</label>
+                <select name="sku" class="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg bg-white" required>
+                  {% for p in all_products %}
+                    <option value="{{ p.sku }}">{{ p.sku }} — {{ p.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Кол-во:</label>
+                <input type="number" name="qty" min="1" value="5" class="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg" required>
+              </div>
+            </div>
+            <button type="submit" class="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition">
+              Оформить приход от поставщика
+            </button>
+          </form>
+        </div>
+
+        <!-- ФОРМА: ПЕРЕМЕЩЕНИЕ (TRANSFER) -->
+        <div id="section-transfer" class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+              Перемещение между ФФ (TRANSFER)
+            </h3>
+            <span class="text-[10px] text-blue-600 font-mono">В пути ФФ</span>
+          </div>
+          <form action="/web/transfer" method="POST" class="space-y-3">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Откуда (любой ФФ):</label>
+                <select name="source_warehouse_id" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg bg-white" required>
+                  {% for wh in all_warehouses %}
+                    <option value="{{ wh.id }}">
+                      {{ wh.name }} {% if not wh.is_active %}[АРХИВ]{% endif %}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Куда (только активный):</label>
+                <select name="target_warehouse_id" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg bg-white" required>
+                  {% for wh in active_warehouses %}
+                    <option value="{{ wh.id }}">{{ wh.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div class="col-span-2">
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Товар:</label>
+                <select name="sku" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg bg-white" required>
+                  {% for p in all_products %}
+                    <option value="{{ p.sku }}">{{ p.sku }} — {{ p.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Кол-во:</label>
+                <input type="number" name="qty" min="1" value="2" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg" required>
+              </div>
+            </div>
+            <button type="submit" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition">
+              Отправить перемещение
+            </button>
+          </form>
+        </div>
+
+        <!-- ФОРМА: РЕЗЕРВ FBS -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              Заказ FBS (Резерв)
+            </h3>
+            <span class="text-[10px] text-amber-600 font-mono">физ. без списания</span>
+          </div>
+          <form action="/web/fbs" method="POST" class="space-y-3">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Склад сборки:</label>
+                <select name="warehouse_id" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg bg-white" required>
+                  {% for wh in active_warehouses %}
+                    <option value="{{ wh.id }}">{{ wh.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">№ Заказа клиента:</label>
+                <input type="text" name="order_number" value="1001" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg" required>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div class="col-span-2">
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Товар:</label>
+                <select name="sku" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg bg-white" required>
+                  {% for p in all_products %}
+                    <option value="{{ p.sku }}">{{ p.sku }} — {{ p.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Кол-во:</label>
+                <input type="number" name="qty" min="1" value="3" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg" required>
+              </div>
+            </div>
+            <button type="submit" class="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition">
+              Зарезервировать под заказ FBS
+            </button>
+          </form>
+        </div>
+
+        <!-- ФОРМА: ПОСТАВКА FBO -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+              Поставка FBO (Отправка на МП)
+            </h3>
+            <span class="text-[10px] text-indigo-600 font-mono">В пути на МП</span>
+          </div>
+          <form action="/web/fbo" method="POST" class="space-y-3">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Склад отгрузки:</label>
+                <select name="warehouse_id" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg bg-white" required>
+                  {% for wh in active_warehouses %}
+                    <option value="{{ wh.id }}">{{ wh.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Склад МП:</label>
+                <input type="text" name="destination" value="Склад WB Коледино" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg" required>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div class="col-span-2">
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Товар:</label>
+                <select name="sku" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg bg-white" required>
+                  {% for p in all_products %}
+                    <option value="{{ p.sku }}">{{ p.sku }} — {{ p.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Кол-во:</label>
+                <input type="number" name="qty" min="1" value="2" class="w-full text-xs px-2 py-2 border border-slate-200 rounded-lg" required>
+              </div>
+            </div>
+            <button type="submit" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition">
+              Отправить поставку на маркетплейс
+            </button>
+          </form>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 5. ЭКРАН 03: АКТИВНЫЕ ОПЕРАЦИИ И ИДЕМПОТЕНТНОСТЬ -->
+    <!-- ========================================== -->
+    <div class="space-y-6">
+
+      <!-- ТАБЛИЦА АКТИВНЫХ ОПЕРАЦИЙ -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-slate-800">
+              03. Активные операции (Товары в пути и Резервы — ждут действий)
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">Кнопки завершения этапов: приёмка перемещений, отгрузка/отмена FBS, приёмка на складе маркетплейса</p>
+          </div>
+          <span class="badge bg-indigo-100 text-indigo-800 font-bold text-xs">{{ active_operations|length }} в процессе</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-slate-200 text-left text-xs">
+            <thead class="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
+              <tr>
+                <th class="px-5 py-3">ID / Документ</th>
+                <th class="px-5 py-3">Тип</th>
+                <th class="px-5 py-3">Статус</th>
+                <th class="px-5 py-3">Артикул и Товар</th>
+                <th class="px-5 py-3 text-right">Кол-во</th>
+                <th class="px-5 py-3">Откуда &rarr; Куда</th>
+                <th class="px-5 py-3 text-center">Действие менеджера</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 font-medium">
+              {% if active_operations|length == 0 %}
+                <tr>
+                  <td colspan="7" class="px-6 py-8 text-center text-slate-400">
+                    Нет активных незавершенных операций. Создайте перемещение, резерв FBS или поставку FBO выше.
+                  </td>
+                </tr>
+              {% endif %}
+              {% for op in active_operations %}
+              <tr class="hover:bg-slate-50 transition">
+                <td class="px-5 py-3.5 whitespace-nowrap">
+                  <span class="font-mono font-bold text-slate-800">#{{ op.id }}</span>
+                  <div class="text-[10px] text-slate-400 font-mono">{{ op.operation_uid }}</div>
+                </td>
+                <td class="px-5 py-3.5 whitespace-nowrap">
+                  {% if op.op_type.value == 'TRANSFER' %}
+                    <span class="badge bg-blue-100 text-blue-800">TRANSFER</span>
+                  {% elif op.op_type.value == 'FBS' %}
+                    <span class="badge bg-amber-100 text-amber-800">FBS</span>
+                  {% elif op.op_type.value == 'FBO' %}
+                    <span class="badge bg-indigo-100 text-indigo-800">FBO</span>
+                  {% else %}
+                    <span class="badge bg-slate-100 text-slate-800">{{ op.op_type.value }}</span>
+                  {% endif %}
+                </td>
+                <td class="px-5 py-3.5 whitespace-nowrap">
+                  {% if op.status.value == 'IN_TRANSIT' %}
+                    <span class="badge bg-blue-50 text-blue-700 border border-blue-200">В пути между ФФ</span>
+                  {% elif op.status.value == 'RESERVED' %}
+                    <span class="badge bg-amber-50 text-amber-700 border border-amber-200">В резерве на ФФ</span>
+                  {% elif op.status.value == 'SHIPPED_TO_CLIENT' %}
+                    <span class="badge bg-purple-50 text-purple-700 border border-purple-200">В пути к клиенту</span>
+                  {% elif op.status.value == 'IN_TRANSIT_TO_MP' %}
+                    <span class="badge bg-indigo-50 text-indigo-700 border border-indigo-200">В пути на МП</span>
+                  {% else %}
+                    <span class="badge bg-slate-100 text-slate-700">{{ op.status.value }}</span>
+                  {% endif %}
+                </td>
+                <td class="px-5 py-3.5 whitespace-nowrap">
+                  <span class="font-mono font-bold text-slate-900">{{ op.product.sku }}</span>
+                  <span class="text-slate-500 text-[11px] block">{{ op.product.name }}</span>
+                </td>
+                <td class="px-5 py-3.5 whitespace-nowrap text-right font-extrabold text-slate-900 text-sm">
+                  {{ op.qty }} шт.
+                </td>
+                <td class="px-5 py-3.5 whitespace-nowrap text-slate-700">
+                  <div class="flex items-center space-x-1.5">
+                    <span class="font-semibold">{{ op.source_warehouse.name if op.source_warehouse else '—' }}</span>
+                    <span class="text-slate-400">&rarr;</span>
+                    <span class="font-semibold text-slate-900">
+                      {% if op.target_warehouse %}
+                        {{ op.target_warehouse.name }}
+                      {% elif op.marketplace_destination %}
+                        {{ op.marketplace_destination }}
+                      {% else %}
+                        Клиент
+                      {% endif %}
+                    </span>
+                  </div>
+                </td>
+                <td class="px-5 py-3.5 whitespace-nowrap text-center">
+                  <div class="inline-flex items-center gap-2">
+                    <!-- Действия в зависимости от статуса -->
+                    {% if op.op_type.value == 'TRANSFER' and op.status.value == 'IN_TRANSIT' %}
+                      <form action="/operations/{{ op.id }}/action" method="POST">
+                        <input type="hidden" name="action" value="accept_transfer">
+                        <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm transition">
+                          Принять на «{{ op.target_warehouse.name }}»
+                        </button>
+                      </form>
+                    {% elif op.op_type.value == 'FBS' and op.status.value == 'RESERVED' %}
+                      <form action="/operations/{{ op.id }}/action" method="POST">
+                        <input type="hidden" name="action" value="ship_fbs">
+                        <button type="submit" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-sm transition">
+                          Отправить клиенту
+                        </button>
+                      </form>
+                      <form action="/operations/{{ op.id }}/action" method="POST">
+                        <input type="hidden" name="action" value="cancel_fbs">
+                        <button type="submit" class="px-2.5 py-1.5 bg-slate-200 hover:bg-rose-100 text-slate-700 hover:text-rose-700 font-semibold rounded-lg transition">
+                          Отменить
+                        </button>
+                      </form>
+                    {% elif op.op_type.value == 'FBS' and op.status.value == 'SHIPPED_TO_CLIENT' %}
+                      <form action="/operations/{{ op.id }}/action" method="POST">
+                        <input type="hidden" name="action" value="deliver_fbs">
+                        <button type="submit" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition">
+                          Подтвердить доставку клиенту
+                        </button>
+                      </form>
+                    {% elif op.op_type.value == 'FBO' and op.status.value == 'IN_TRANSIT_TO_MP' %}
+                      <form action="/operations/{{ op.id }}/action" method="POST">
+                        <input type="hidden" name="action" value="accept_fbo">
+                        <button type="submit" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm transition">
+                          Подтвердить приёмку на МП
+                        </button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- БЛОК ПРОВЕРКИ ИДЕМПОТЕНТНОСТИ (Сценарий В) -->
+      <div class="bg-amber-50/50 rounded-2xl border border-amber-200 p-5 shadow-sm">
+        <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <div>
+            <h3 class="text-sm font-bold text-amber-950 flex items-center gap-2">
+              <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              Защита от повторного подтверждения (Идемпотентность — проверка в 1 клик)
+            </h3>
+            <p class="text-xs text-amber-800">
+              Позволяет проверить блокировку двойного списания / начисления на завершенных операциях.
+            </p>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto bg-white rounded-xl border border-amber-200">
+          <table class="min-w-full divide-y divide-slate-100 text-left text-xs">
+            <thead class="bg-amber-50/50 text-slate-600 font-semibold uppercase">
+              <tr>
+                <th class="px-4 py-2.5">ID</th>
+                <th class="px-4 py-2.5">Тип</th>
+                <th class="px-4 py-2.5">Статус</th>
+                <th class="px-4 py-2.5">Товар</th>
+                <th class="px-4 py-2.5 text-right">Кол-во</th>
+                <th class="px-4 py-2.5">Откуда &rarr; Куда</th>
+                <th class="px-4 py-2.5 text-center">Проверка защиты</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for rop in recent_completed %}
+              <tr class="hover:bg-slate-50">
+                <td class="px-4 py-2.5 font-mono font-bold text-slate-800">#{{ rop.id }}</td>
+                <td class="px-4 py-2.5 font-semibold text-slate-700">{{ rop.op_type.value }}</td>
+                <td class="px-4 py-2.5">
+                  <span class="badge bg-slate-100 text-slate-700 text-[10px]">{{ rop.status.value }}</span>
+                </td>
+                <td class="px-4 py-2.5 font-mono">{{ rop.product.sku }}</td>
+                <td class="px-4 py-2.5 text-right font-bold">{{ rop.qty }} шт.</td>
+                <td class="px-4 py-2.5 text-slate-600">
+                  {{ rop.source_warehouse.name if rop.source_warehouse else '—' }} &rarr; {{ rop.target_warehouse.name if rop.target_warehouse else rop.marketplace_destination }}
+                </td>
+                <td class="px-4 py-2.5 text-center">
+                  <form action="/operations/{{ rop.id }}/action" method="POST" class="inline-block">
+                    <input type="hidden" name="action" value="test_repeat">
+                    <button type="submit" class="px-3 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-bold rounded-md shadow-xs transition text-[11px]">
+                      Тест повторного подтверждения (Idempotency Check)
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 6. ЭКРАН 04: АУДИТОРСКИЙ ЖУРНАЛ (LEDGER) -->
+    <!-- ========================================== -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="text-base font-bold text-slate-800">
+            04. Неизменяемый аудиторский журнал движений (Audit Ledger)
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">Фиксация каждого шага изменения остатков и перемещений со снимком стока</p>
+        </div>
+
+        <!-- Фильтры лога -->
+        <form method="GET" action="/" class="flex items-center gap-2">
+          <input type="text" name="sku_filter" value="{{ sku_filter }}" placeholder="Фильтр по SKU..." class="text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg">
+          <input type="text" name="warehouse_filter" value="{{ warehouse_filter }}" placeholder="По складу / локации..." class="text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg">
+          <button type="submit" class="px-3 py-1.5 bg-slate-800 text-white text-xs font-semibold rounded-lg hover:bg-slate-700 transition">
+            Найти
+          </button>
+          {% if sku_filter or warehouse_filter %}
+            <a href="/" class="text-xs text-slate-500 hover:text-slate-800 underline">Сбросить</a>
+          {% endif %}
+        </form>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200 text-left text-xs">
+          <thead class="bg-slate-50 text-slate-600 font-semibold uppercase tracking-wider">
+            <tr>
+              <th class="px-5 py-3">Дата / Время</th>
+              <th class="px-5 py-3">Событие</th>
+              <th class="px-5 py-3">Документ</th>
+              <th class="px-5 py-3">Артикул</th>
+              <th class="px-5 py-3 text-right">Кол-во</th>
+              <th class="px-5 py-3">Откуда &rarr; Куда</th>
+              <th class="px-5 py-3">Снимок остатка после операции</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 font-medium">
+            {% for h in history_records %}
+            <tr class="hover:bg-slate-50 transition">
+              <td class="px-5 py-2.5 whitespace-nowrap text-slate-500 font-mono text-[11px]">
+                {{ h.created_at.strftime('%Y-%m-%d %H:%M:%S') if h.created_at else '—' }}
+              </td>
+              <td class="px-5 py-2.5 whitespace-nowrap">
+                {% if 'ПРИХОД' in h.action_type %}
+                  <span class="badge bg-emerald-100 text-emerald-800">{{ h.action_type }}</span>
+                {% elif 'ПЕРЕМЕЩЕНИЕ' in h.action_type %}
+                  <span class="badge bg-blue-100 text-blue-800">{{ h.action_type }}</span>
+                {% elif 'FBS' in h.action_type %}
+                  <span class="badge bg-amber-100 text-amber-800">{{ h.action_type }}</span>
+                {% elif 'FBO' in h.action_type %}
+                  <span class="badge bg-indigo-100 text-indigo-800">{{ h.action_type }}</span>
+                {% else %}
+                  <span class="badge bg-slate-100 text-slate-800">{{ h.action_type }}</span>
+                {% endif %}
+              </td>
+              <td class="px-5 py-2.5 whitespace-nowrap font-mono text-slate-600">
+                #{{ h.operation_id if h.operation_id else '—' }}
+              </td>
+              <td class="px-5 py-2.5 whitespace-nowrap font-mono font-bold text-slate-800">
+                {{ h.product.sku }}
+              </td>
+              <td class="px-5 py-2.5 whitespace-nowrap text-right font-extrabold text-slate-900">
+                {{ h.qty }} шт.
+              </td>
+              <td class="px-5 py-2.5 whitespace-nowrap text-slate-700">
+                <span class="font-medium text-slate-600">{{ h.from_location }}</span>
+                <span class="text-slate-400 mx-1">&rarr;</span>
+                <span class="font-bold text-slate-900">{{ h.to_location }}</span>
+              </td>
+              <td class="px-5 py-2.5 whitespace-nowrap font-mono text-[11px] text-slate-600 bg-slate-50/50">
+                {{ h.snapshot_after }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center text-xs text-slate-400 border-t border-slate-200 mt-12">
+    CheckStock © 2026 • Промышленная система складского учёта и отслеживания перемещений • FastAPI + SQLAlchemy 2.0 + PostgreSQL 16 + Tailwind CSS
+  </footer>
+
+</body>
+</html>
